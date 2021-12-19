@@ -12,19 +12,31 @@ protocol RequestProtocol {
 }
 
 class NetworkClient {
-    func get(request: RequestProtocol, completion: @escaping (Result<Data, Error>) -> ()){
+    
+    func get(request: RequestProtocol) async throws -> Data  {
         let urlRequest = URLRequest(url: request.url)
-        URLSession.shared.dataTask(with: urlRequest) { (data, response, error) in
-            if error != nil {
-                completion(.failure(NetworkError.networkError))
-                return
+        return try await withCheckedThrowingContinuation { continuation in
+            URLSession.shared.dataTask(with: urlRequest) { data, response, error in
+                if error != nil {
+                    continuation.resume(throwing: NetworkError.networkError)
+                    return
+                }
+                
+                guard let data = data else {
+                    continuation.resume(throwing: NetworkError.noData)
+                    return
+                }
+                
+                continuation.resume(returning: data)
             }
-            guard let data = data else {
-                completion(.failure(NetworkError.noData))
-                return
-            }
-            completion(.success(data))
-        }.resume()
+            .resume()
+        }
+    }
+    
+    func getDecodable<T: Decodable>(request: RequestProtocol, ofType type: T.Type, using decoder: JSONDecoder = .init()) async throws -> T {
+        let data = try await get(request: request)
+        let result = try decoder.decode(T.self, from: data)
+        return result
     }
 }
 
